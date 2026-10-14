@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clasificador de Cáncer de Mama - Neurona MP</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 950px; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); margin: auto; }
+        h2 { color: #2c3e50; text-align: center; margin-top: 0; }
+        p.subtitle { color: #7f8c8d; text-align: center; margin-bottom: 25px; }
+        
+        .grid-inputs {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            max-height: 420px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+        
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .input-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 4px;
+        }
+        
+        .input-group input {
+            padding: 9px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .input-group input.error-input {
+            border-color: #ef4444;
+            background-color: #fef2f2;
+        }
+
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            flex: 1;
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #1d4ed8; }
+        
+        button.secondary {
+            background-color: #64748b;
+        }
+        button.secondary:hover { background-color: #475569; }
+
+        /* Cajas de resultados */
+        .result-box { margin-top: 25px; padding: 20px; border-radius: 8px; display: none; }
+        
+        /* Estilo Verde para Benigno */
+        .result-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+        
+        /* Estilo Rojo para Maligno */
+        .result-danger { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        
+        /* Estilo para Errores de validación/conexión */
+        .result-error { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+        
+        .result-title { font-size: 17px; font-weight: bold; margin-bottom: 8px; }
+        .result-details { font-size: 14px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Detección de Cáncer de Mama</h2>
+    <p class="subtitle">Modelo de Neurona de McCulloch-Pitts conectado a API FastAPI</p>
+    
+    <div id="formInputs" class="grid-inputs"></div>
+
+    <div class="actions">
+        <button type="button" class="secondary" onclick="cargarEjemplo()">Cargar Valores de Ejemplo</button>
+        <button type="button" onclick="enviarPrediccion()">Ejecutar Predicción</button>
+    </div>
+
+    <!-- Caja de salida -->
+    <div id="resultadoContainer" class="result-box">
+        <div id="resultTitle" class="result-title"></div>
+        <div id="resultDetails" class="result-details"></div>
+    </div>
+</div>
+
+<script>
+    const featureNames = [
+        "mean radius", "mean texture", "mean perimeter", "mean area", "mean smoothness", 
+        "mean compactness", "mean concavity", "mean concave points", "mean symmetry", "mean fractal dimension", 
+        "radius error", "texture error", "perimeter error", "area error", "smoothness error", 
+        "compactness error", "concavity error", "concave points error", "symmetry error", "fractal dimension error", 
+        "worst radius", "worst texture", "worst perimeter", "worst area", "worst smoothness", 
+        "worst compactness", "worst concavity", "worst concave points", "worst symmetry", "worst fractal dimension"
+    ];
+
+    const defaultValues = [
+        13.54, 14.36, 87.46, 566.3, 0.09779, 0.08129, 0.06664, 0.04781, 0.1885, 0.05766, 0.2699, 0.7886, 2.058, 23.56, 0.008462, 0.0146, 0.02387, 0.01315, 0.0198, 0.0023, 15.11, 19.26, 99.7, 711.2, 0.144, 0.1773, 0.239, 0.1288, 0.2977, 0.07259
+    ];
+
+    window.onload = function() {
+        const container = document.getElementById('formInputs');
+        container.innerHTML = ""; 
+        featureNames.forEach((name, index) => {
+            const div = document.createElement('div');
+            div.className = 'input-group';
+            div.innerHTML = `
+                <label for="input_${index}">${index + 1}. ${name}</label>
+                <input type="number" step="any" id="input_${index}" value="${defaultValues[index]}" oninput="limpiarErrorInput(${index})">
+            `;
+            container.appendChild(div);
+        });
+    };
+
+    function cargarEjemplo() {
+        defaultValues.forEach((val, index) => {
+            const input = document.getElementById(`input_${index}`);
+            if (input) {
+                input.value = val;
+                input.classList.remove('error-input');
+            }
+        });
+    }
+
+    function limpiarErrorInput(index) {
+        const input = document.getElementById(`input_${index}`);
+        if (input) input.classList.remove('error-input');
+    }
+
+    window.enviarPrediccion = async function() {
+        const container = document.getElementById('resultadoContainer');
+        const titleEl = document.getElementById('resultTitle');
+        const detailsEl = document.getElementById('resultDetails');
+        
+        container.style.display = 'block';
+        container.className = "result-box"; 
+
+        let featuresArray = [];
+
+        // Validación de campos
+        for (let i = 0; i < 30; i++) {
+            const inputEl = document.getElementById(`input_${i}`);
+            const val = parseFloat(inputEl.value);
+            
+            if (isNaN(inputEl.value.trim()) || inputEl.value.trim() === "" || isNaN(val)) {
+                inputEl.classList.add('error-input');
+                container.classList.add('result-error');
+                titleEl.innerText = "⚠️ Error de validación en los campos";
+                detailsEl.innerHTML = `El campo <strong>#${i + 1} (${featureNames[i]})</strong> está vacío o contiene un valor no numérico válido.`;
+                inputEl.focus();
+                return;
+            }
+            featuresArray.push(val);
+        }
+
+        try {
+            titleEl.innerText = "Consultando con la API...";
+            detailsEl.innerText = "Por favor espere mientras la red neuronal procesa los datos.";
+
+            const response = await fetch('http://127.0.0.1:8000/predecir', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ features: featuresArray })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                if (data.error) {
+                    container.classList.add('result-error');
+                    titleEl.innerText = "❌ Error en el Servidor";
+                    detailsEl.innerText = data.error;
+                } else {
+                    const esBenigno = data.prediccion_booleana;
+                    
+                    if (esBenigno) {
+                        // Estilo Verde si es Benigno
+                        container.classList.add('result-success');
+                        titleEl.innerText = "✅ Resultado: Tumor Benigno";
+                    } else {
+                        // Estilo Rojo si es Maligno
+                        container.classList.add('result-danger');
+                        titleEl.innerText = "🚨 Resultado: Tumor Maligno";
+                    }
+                    
+                    detailsEl.innerHTML = `
+                        • <strong>Diagnóstico descriptivo:</strong> ${data.resultado}<br>
+                        • <strong>Umbral (Threshold) óptimo aplicado:</strong> ${data.threshold_utilizado}<br>
+                        • <strong>Estado del modelo:</strong> Procesado correctamente por la API de Python.
+                    `;
+                }
+            } else {
+                container.classList.add('result-error');
+                titleEl.innerText = "❌ Error de Comunicación";
+                detailsEl.innerText = "No se pudo interpretar la respuesta del servidor FastAPI.";
+            }
+
+        } catch (e) {
+            container.classList.add('result-error');
+            titleEl.innerText = "🔌 Error de Conexión";
+            detailsEl.innerHTML = "No se pudo conectar con la API.<br>Asegúrate de que el servidor esté activo ejecutando: <code>python -m uvicorn main:app --reload</code>";
+        }
+    }
+</script>
+
+</body>
+</html>
